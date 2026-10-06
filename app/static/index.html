@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexForge AI — Autonomous Issue-to-PR Assistant</title>
+  <meta name="description" content="NexForge AI dashboard: trigger repo analysis, track AI-driven fix jobs, and monitor autonomous PR generation." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #070a13; --bg2: #0c1120; --bg3: #11182c;
+      --surface: rgba(255,255,255,0.035); --surface-hover: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.09); --border-h: rgba(99,179,237,0.4);
+      --accent: #63b3ed; --accent-glow: rgba(99,179,237,0.25);
+      --accent2: #8b5cf6; --accent2-glow: rgba(139,92,246,0.25);
+      --green: #48bb78; --green-glow: rgba(72,187,120,0.3);
+      --yellow: #ecc94b; --yellow-glow: rgba(236,201,75,0.3);
+      --red: #fc8181; --red-glow: rgba(252,129,129,0.35);
+      --text: #e2e8f0; --text-muted: #94a3b8; --text-dim: #64748b;
+      --mono: "JetBrains Mono", monospace; --sans: "Inter", sans-serif;
+      --radius: 14px; --radius-sm: 8px;
+    }
+    body {
+      font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh;
+      background-image: 
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,179,237,0.09) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 85% 105%, rgba(139,92,246,0.08) 0%, transparent 60%);
+      line-height: 1.5;
+    }
+    nav {
+      position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px);
+      background: rgba(7,10,19,0.85); border-bottom: 1px solid var(--border);
+      padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 66px;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.5px; }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: linear-gradient(135deg, #63b3ed 0%, #8b5cf6 100%);
+      display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .badge { font-size: 0.65rem; font-weight: 600; padding: 3px 8px; border-radius: 99px; letter-spacing: 0.5px; display: inline-flex; align-items: center; gap: 4px; }
+    .badge-blue   { background: rgba(99,179,237,0.12); color: var(--accent);  border: 1px solid rgba(99,179,237,0.25); }
+    .badge-green  { background: rgba(72,187,120,0.12); color: var(--green);   border: 1px solid rgba(72,187,120,0.25); }
+    .badge-yellow { background: rgba(236,201,75,0.12); color: var(--yellow);  border: 1px solid rgba(236,201,75,0.25); }
+    .badge-red    { background: rgba(252,129,129,0.12);color: var(--red);    border: 1px solid rgba(252,129,129,0.25); }
+    .badge-purple { background: rgba(139,92,246,0.12); color: #c084fc;       border: 1px solid rgba(139,92,246,0.25); }
+    
+    .nav-right { display: flex; align-items: center; gap: 16px; font-size: 0.82rem; }
+    #health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); display: inline-block; transition: all 0.3s; }
+    #health-dot.ok  { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    #health-dot.err { background: var(--red);   box-shadow: 0 0 10px var(--red); }
+    
+    .worker-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 12px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      cursor: pointer; transition: all 0.2s; user-select: none;
+    }
+    .worker-pill:hover { border-color: var(--border-h); background: rgba(255,255,255,0.07); }
+    .worker-dot { width: 8px; height: 8px; border-radius: 50%; transition: all 0.3s; }
+    .worker-pill.active .worker-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .worker-pill.paused .worker-dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+    .worker-pill.busy   .worker-dot { background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulseDot 1s infinite; }
+    @keyframes pulseDot { 0%,100%{opacity:1; transform:scale(1);} 50%{opacity:0.4; transform:scale(0.85);} }
+
+    .toggle-switch { width: 38px; height: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 99px; position: relative; transition: all 0.2s; cursor: pointer; flex-shrink: 0; }
+    .toggle-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-dim); transition: all 0.2s cubic-bezier(0.4,0,0.2,1); }
+    .toggle-switch.on { background: rgba(72,187,120,0.25); border-color: var(--green); }
+    .toggle-switch.on::after { background: var(--green); transform: translateX(16px); }
+
+    .container { max-width: 1120px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+    .hero { text-align: center; padding: 2rem 0 2rem; }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 800; letter-spacing: -1.5px; line-height: 1.15;
+      background: linear-gradient(135deg, #f8fafc 20%, #93c5fd 65%, #c084fc 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero p { color: var(--text-muted); margin-top: 0.8rem; font-size: 1.05rem; max-width: 540px; margin-inline: auto; }
+    
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 2rem 0; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.25rem 1.5rem;
+      transition: all 0.2s; backdrop-filter: blur(8px);
+    }
+    .stat-card:hover { border-color: var(--border-h); transform: translateY(-2px); }
+    .stat-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+    .stat-value { font-size: 2rem; font-weight: 800; margin-top: 0.3rem; font-family: var(--mono); }
+    .stat-value.blue   { color: var(--accent); }
+    .stat-value.green  { color: var(--green); }
+    .stat-value.yellow { color: var(--yellow); }
+    .stat-value.red    { color: var(--red); }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.75rem; margin-bottom: 1.5rem;
+      backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+    .card-title { font-size: 0.92rem; font-weight: 700; color: var(--text); letter-spacing: 0.3px; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; }
+    .card-title-left { display: flex; align-items: center; gap: 8px; }
+    
+    .input-row { display: flex; gap: 0.75rem; }
+    input[type="text"] {
+      flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); font-family: var(--mono); font-size: 0.85rem;
+      padding: 0.75rem 1rem; outline: none; transition: all 0.2s;
+    }
+    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,179,237,0.18); }
+    input[type="text"]::placeholder { color: var(--text-dim); }
+    
+    button { font-family: var(--sans); cursor: pointer; border: none; outline: none; border-radius: 10px; font-weight: 600; font-size: 0.85rem; padding: 0.75rem 1.4rem; transition: all 0.18s; white-space: nowrap; }
+    .btn-primary { background: linear-gradient(135deg, #63b3ed, #8b5cf6); color: #fff; box-shadow: 0 4px 18px rgba(99,179,237,0.25); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(99,179,237,0.4); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--border-h); background: rgba(99,179,237,0.08); }
+    .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Worker Control Panel */
+    .worker-panel {
+      display: grid; grid-template-columns: 1fr auto; gap: 1.5rem; align-items: center;
+      background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.5rem;
+    }
+    .worker-status-box { display: flex; flex-direction: column; gap: 0.4rem; }
+    .worker-headline { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; font-weight: 700; }
+    .worker-subtext { font-size: 0.8rem; color: var(--text-muted); }
+    .worker-controls-right { display: flex; align-items: center; gap: 1rem; }
+    
+    /* Stepper Component */
+    .stepper-container {
+      margin: 1.25rem 0 1.5rem;
+      padding: 1.25rem 1rem 1rem;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+    .stepper-header {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);
+      margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .stepper-track {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5rem; position: relative;
+    }
+    .stepper-track::before {
+      content: ""; position: absolute; top: 18px; left: 8%; right: 8%; height: 2px;
+      background: rgba(255,255,255,0.08); z-index: 1;
+    }
+    .step-item {
+      display: flex; flex-direction: column; align-items: center; text-align: center;
+      position: relative; z-index: 2;
+    }
+    .step-node {
+      width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; background: var(--bg2); border: 2px solid var(--border); color: var(--text-dim);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .step-item.pending .step-node { border-color: rgba(255,255,255,0.12); color: var(--text-dim); }
+    .step-item.running .step-node {
+      border-color: var(--accent); color: #fff; background: rgba(99,179,237,0.2);
+      box-shadow: 0 0 20px var(--accent-glow); animation: nodePulse 1.5s infinite;
+    }
+    @keyframes nodePulse { 0%,100%{transform:scale(1); box-shadow:0 0 16px var(--accent-glow);} 50%{transform:scale(1.08); box-shadow:0 0 26px rgba(99,179,237,0.6);} }
+    .step-item.completed .step-node {
+      border-color: var(--green); color: #fff; background: rgba(72,187,120,0.2);
+      box-shadow: 0 0 12px var(--green-glow);
+    }
+    .step-item.failed .step-node {
+      border-color: var(--red); color: #fff; background: rgba(252,129,129,0.2);
+      box-shadow: 0 0 14px var(--red-glow);
+    }
+    .step-label {
+      font-size: 0.72rem; font-weight: 700; margin-top: 0.6rem; color: var(--text); line-height: 1.2;
+    }
+    .step-status-pill {
+      font-size: 0.62rem; font-weight: 600; padding: 1px 6px; border-radius: 99px; margin-top: 4px;
+      text-transform: capitalize;
+    }
+    .step-status-pill.pending   { background: rgba(255,255,255,0.06); color: var(--text-dim); }
+    .step-status-pill.running   { background: rgba(99,179,237,0.2); color: var(--accent); border: 1px solid rgba(99,179,237,0.4); }
+    .step-status-pill.completed { background: rgba(72,187,120,0.2); color: var(--green); border: 1px solid rgba(72,187,120,0.3); }
+    .step-status-pill.failed    { background: rgba(252,129,129,0.2); color: var(--red); border: 1px solid rgba(252,129,129,0.3); }
+
+    .step-detail {
+      font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; max-width: 95px;
+      overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+
+    /* Terminal Console */
+    .terminal-console {
+      background: #040711; border: 1px solid var(--border); border-radius: 10px;
+      padding: 0.85rem 1rem; font-family: var(--mono); font-size: 0.75rem;
+      max-height: 200px; overflow-y: auto; color: #cbd5e1; line-height: 1.6; margin: 1rem 0;
+    }
+    .log-line { margin-bottom: 2px; word-break: break-word; }
+    .log-line .tag { color: var(--accent); font-weight: 600; margin-right: 6px; }
+    .log-line .tag.err { color: var(--red); }
+    .log-line .tag.done { color: var(--green); }
+
+    /* Pull Request Banner */
+    .pr-banner {
+      background: linear-gradient(135deg, rgba(72,187,120,0.15), rgba(99,179,237,0.15));
+      border: 1px solid rgba(72,187,120,0.4); border-radius: 12px; padding: 1rem 1.25rem;
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem;
+      animation: bannerGlow 2s infinite alternate;
+    }
+    @keyframes bannerGlow { from{box-shadow:0 0 10px rgba(72,187,120,0.1);} to{box-shadow:0 0 25px rgba(72,187,120,0.25);} }
+    .pr-title { font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; color: #86efac; }
+    .pr-link-btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+      background: var(--green); color: #040711; font-weight: 700; font-size: 0.8rem;
+      border-radius: 8px; text-decoration: none; transition: transform 0.15s;
+    }
+    .pr-link-btn:hover { transform: translateY(-1px); }
+
+    /* Diff View */
+    .diff-box {
+      background: #040711; border: 1px solid var(--border); border-radius: 10px;
+      padding: 0.85rem 1rem; font-family: var(--mono); font-size: 0.75rem;
+      max-height: 220px; overflow-y: auto; color: #e2e8f0; line-height: 1.5; margin: 1rem 0;
+    }
+    .diff-line { padding: 1px 4px; border-radius: 2px; }
+    .diff-line.add { background: rgba(72,187,120,0.15); color: #86efac; }
+    .diff-line.del { background: rgba(252,129,129,0.15); color: #fca5a5; }
+    .diff-line.hdr { color: var(--accent); font-weight: 600; }
+
+    /* Jobs list */
+    .jobs-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    .filter-tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .filter-tab { font-size: 0.75rem; font-weight: 600; padding: 4px 12px; border-radius: 99px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text-muted); transition: all 0.15s; }
+    .filter-tab.active, .filter-tab:hover { background: rgba(99,179,237,0.12); color: var(--accent); border-color: rgba(99,179,237,0.3); }
+    #jobs-list { display: flex; flex-direction: column; gap: 0.6rem; }
+    .job-row {
+      background: rgba(255,255,255,0.025); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1rem 1.25rem; display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center;
+      gap: 1rem; cursor: pointer; transition: all 0.2s;
+    }
+    .job-row:hover { border-color: var(--border-h); background: rgba(99,179,237,0.04); transform: translateX(2px); }
+    .job-id { font-family: var(--mono); font-size: 0.75rem; color: var(--text-dim); }
+    .job-meta { min-width: 0; }
+    .job-payload { font-family: var(--mono); font-size: 0.8rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .job-time { font-size: 0.72rem; color: var(--text-dim); margin-top: 3px; }
+    .job-stage-pill {
+      font-size: 0.7rem; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .job-stage-pill.active { border-color: var(--accent); color: var(--accent); background: rgba(99,179,237,0.12); }
+    .job-attempts { font-size: 0.72rem; color: var(--text-dim); text-align: right; white-space: nowrap; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-dim); font-size: 0.9rem; }
+    .empty-state .emoji { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 200; display: none; align-items: center; justify-content: center; padding: 1.5rem; }
+    .modal-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    .modal {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 18px;
+      width: 100%; max-width: 740px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.7); animation: slideUp 0.25s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(24px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+    .modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-title { font-weight: 700; font-size: 1rem; display: flex; align-items: center; gap: 10px; }
+    .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+    .modal-close:hover { background: var(--surface); color: var(--text); }
+    .modal-body { padding: 1.5rem; overflow-y: auto; flex: 1; }
+    pre { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-family: var(--mono); font-size: 0.78rem; color: var(--text); white-space: pre-wrap; word-break: break-all; overflow-x: auto; line-height: 1.6; }
+    .detail-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 0.3rem; }
+
+    #toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 999; display: flex; flex-direction: column; gap: 0.5rem; }
+    .toast { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1.2rem; font-size: 0.83rem; max-width: 360px; animation: slideIn 0.25s ease; display: flex; align-items: flex-start; gap: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+    .toast.success { border-color: rgba(72,187,120,0.35); }
+    .toast.error   { border-color: rgba(252,129,129,0.35); }
+    .toast.info    { border-color: rgba(99,179,237,0.35); }
+    @keyframes slideIn { from { transform: translateX(120%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.25); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 768px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .stepper-track { grid-template-columns: repeat(3, 1fr); gap: 1rem 0.5rem; }
+      .stepper-track::before { display: none; }
+      .worker-panel { grid-template-columns: 1fr; }
+      .job-row { grid-template-columns: 1fr auto; }
+      .job-id, .job-attempts, .job-stage-pill { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">
+    <div class="logo-icon">&#9889;</div>
+    NexForge <span style="color:var(--accent)">AI</span>
+    <span class="badge badge-blue">v0.2.0</span>
+  </div>
+  <div class="nav-links" style="display:flex;align-items:center;gap:18px;margin-left:28px;margin-right:auto;font-size:0.8rem">
+    <a href="/" style="color:var(--accent);text-decoration:none;font-weight:700">Operations</a>
+    <a href="/review" style="color:var(--text-muted);text-decoration:none">Review Queue</a>
+    <a href="/architecture" style="color:var(--text-muted);text-decoration:none">Architecture</a>
+  </div>
+  <div class="nav-right">
+    <div class="worker-pill active" id="nav-worker-pill" onclick="toggleAutoWorker()" title="Click to toggle Auto-Worker">
+      <span class="worker-dot"></span>
+      <span id="nav-worker-text">Auto-Worker: ON</span>
+    </div>
+    <span style="color:var(--border)">|</span>
+    <span id="health-dot"></span>
+    <span id="health-label" style="font-size:0.78rem">Checking&hellip;</span>
+    <span style="color:var(--border)">|</span>
+    <span style="font-size:0.78rem">Auto-refresh</span>
+    <div class="toggle-switch on" id="auto-refresh-toggle" title="Toggle auto-refresh"></div>
+  </div>
+</nav>
+
+<div id="toast-container"></div>
+
+<!-- Job Detail Modal with Real-time 6-Stage Stepper -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Job Detail</div>
+      <button class="modal-close" onclick="closeModalDirect()">&#10005;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="hero">
+    <h1>Autonomous Issue &rarr; PR</h1>
+    <p>NexForge AI automatically clones, parses AST, queries code knowledge graphs, diagnoses defects, generates patches, and verifies fixes in Docker sandbox containers.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Jobs</div>
+      <div class="stat-value blue" id="stat-total">&mdash;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Queued</div>
+      <div class="stat-value yellow" id="stat-queued">&mdash;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Completed</div>
+      <div class="stat-value green" id="stat-completed">&mdash;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Failed</div>
+      <div class="stat-value red" id="stat-failed">&mdash;</div>
+    </div>
+  </div>
+
+  <!-- Worker Control Panel -->
+  <div class="card">
+    <div class="card-title">
+      <div class="card-title-left"><span>&#9881;&#65039;</span> Integrated Auto-Worker Engine</div>
+      <span class="badge badge-green" id="worker-state-badge">Active</span>
+    </div>
+    <div class="worker-panel">
+      <div class="worker-status-box">
+        <div class="worker-headline">
+          <span id="worker-status-headline">Worker actively listening for jobs</span>
+        </div>
+        <div class="worker-subtext" id="worker-status-subtext">
+          Background thread automatically processes queued jobs through all 6 pipeline stages without needing a second terminal.
+        </div>
+      </div>
+      <div class="worker-controls-right">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <span style="font-size:0.75rem;font-weight:600;color:var(--text-muted)">Auto-Process</span>
+          <div class="toggle-switch on" id="worker-main-toggle" onclick="toggleAutoWorker()" title="Toggle Auto-Worker ON/OFF"></div>
+        </div>
+        <button class="btn-secondary" id="run-btn" onclick="runNextJob()">&#9654; Run Next Job</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analyze Repository Card -->
+  <div class="card">
+    <div class="card-title">
+      <div class="card-title-left"><span>&#128269;</span> Analyze Repository</div>
+    </div>
+    <div class="input-row">
+      <input type="text" id="repo-url" placeholder="https://github.com/owner/repo" autocomplete="off" />
+      <button class="btn-primary" id="analyze-btn" onclick="analyzeRepo()">Analyze Repository</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.75rem">
+      <input type="text" id="issue-title" placeholder="Issue title (optional for indexing)" autocomplete="off" />
+      <input type="text" id="issue-number" placeholder="Issue number" inputmode="numeric" />
+    </div>
+    <textarea id="issue-text" placeholder="Describe the bug, expected behavior, stack trace, or reproduction steps..." style="width:100%;min-height:100px;margin-top:0.75rem;resize:vertical;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--sans);font-size:0.85rem;padding:0.75rem 1rem;outline:none"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted)"><input type="checkbox" id="open-pr" /> Allow PR creation after tests pass</label>
+    <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+      <span>Queues an autonomous issue-to-PR analysis job. The auto-worker will pick it up instantly.</span>
+      <span style="cursor:pointer;color:var(--accent);font-weight:600" onclick="seedSampleRepo()">&#129514; Use Sample Demo Repo</span>
+    </div>
+  </div>
+
+  <!-- Job Queue with Filter Tabs -->
+  <div class="card">
+    <div class="jobs-header">
+      <div class="card-title" style="margin:0">
+        <div class="card-title-left"><span>&#128203;</span> Real-time Job Queue</div>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <div class="filter-tabs" id="filter-tabs">
+          <button class="filter-tab active" data-filter="all"       onclick="setFilter('all')">All</button>
+          <button class="filter-tab"        data-filter="queued"    onclick="setFilter('queued')">Queued</button>
+          <button class="filter-tab"        data-filter="running"   onclick="setFilter('running')">Running</button>
+          <button class="filter-tab"        data-filter="completed" onclick="setFilter('completed')">Completed</button>
+          <button class="filter-tab"        data-filter="failed"    onclick="setFilter('failed')">Failed</button>
+        </div>
+        <button class="btn-secondary" style="padding:4px 12px;font-size:0.75rem" onclick="loadJobs()">&#8635; Refresh</button>
+      </div>
+    </div>
+    <div id="jobs-list">
+      <div class="empty-state"><span class="emoji">&#8987;</span>Loading jobs&hellip;</div>
+    </div>
+  </div>
+
+  <!-- Lookup Job by ID -->
+  <div class="card">
+    <div class="card-title">
+      <div class="card-title-left"><span>&#128270;</span> Lookup Job by UUID</div>
+    </div>
+    <div class="input-row">
+      <input type="text" id="job-lookup-id" placeholder="Enter job UUID&hellip;" autocomplete="off" />
+      <button class="btn-secondary" onclick="lookupJob()">Fetch &amp; View Progress</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  var currentFilter = 'all';
+  var allJobs = [];
+  var autoRefresh = true;
+  var refreshTimer = null;
+  var activeModalJobId = null;
+  var modalPollTimer = null;
+  var workerStatus = { enabled: true, is_busy: false, current_job_id: null, processed_count: 0 };
+
+  var STAGES_CONFIG = [
+    { key: 'clone',          label: 'Clone',         icon: '&#128230;', desc: 'Workspace clone & branch setup' },
+    { key: 'ast_parsing',    label: 'AST Parsing',   icon: '&#127795;', desc: 'Tree-Sitter syntax analysis' },
+    { key: 'graph_indexing', label: 'Graph Index',   icon: '&#128456;', desc: 'GraphRAG symbol retrieval' },
+    { key: 'debugger',       label: 'Debugger',      icon: '&#128269;', desc: 'Defect root cause diagnosis' },
+    { key: 'coder',          label: 'Coder Patch',   icon: '&#9889;',   desc: 'Unified diff synthesis' },
+    { key: 'sandbox_pr',     label: 'Sandbox & PR',  icon: '&#128737;', desc: 'Docker testing & GitHub PR' }
+  ];
+
+  async function checkHealth() {
+    try {
+      var r = await fetch('/health');
+      var dot = document.getElementById('health-dot');
+      var lbl = document.getElementById('health-label');
+      if (r.ok) {
+        dot.className = 'ok';
+        lbl.textContent = 'API Online';
+      } else {
+        dot.className = 'err';
+        lbl.textContent = 'API Error';
+      }
+    } catch (e) {
+      document.getElementById('health-dot').className = 'err';
+      document.getElementById('health-label').textContent = 'API Offline';
+    }
+  }
+
+  async function checkWorkerStatus() {
+    try {
+      var r = await fetch('/worker/status');
+      if (!r.ok) return;
+      workerStatus = await r.json();
+      updateWorkerUI();
+    } catch(e) {}
+  }
+
+  function updateWorkerUI() {
+    var pill = document.getElementById('nav-worker-pill');
+    var navText = document.getElementById('nav-worker-text');
+    var mainToggle = document.getElementById('worker-main-toggle');
+    var headline = document.getElementById('worker-status-headline');
+    var subtext = document.getElementById('worker-status-subtext');
+    var badge = document.getElementById('worker-state-badge');
+
+    mainToggle.classList.toggle('on', workerStatus.enabled);
+
+    if (workerStatus.is_busy) {
+      pill.className = 'worker-pill busy';
+      navText.textContent = 'Worker: BUSY';
+      badge.className = 'badge badge-blue';
+      badge.textContent = 'Executing Job';
+      headline.innerHTML = '<span class="spinner"></span> Worker processing job <code style="font-family:var(--mono);font-size:0.85rem">' + escHtml((workerStatus.current_job_id||'').slice(0,8)) + '&hellip;</code>';
+      subtext.textContent = 'Running autonomous pipeline stages... Total processed: ' + workerStatus.processed_count;
+    } else if (workerStatus.enabled) {
+      pill.className = 'worker-pill active';
+      navText.textContent = 'Auto-Worker: ON';
+      badge.className = 'badge badge-green';
+      badge.textContent = 'Active (Listening)';
+      headline.textContent = 'Auto-Worker is active and listening for queued jobs';
+      subtext.textContent = 'Jobs process automatically in the background. Total completed: ' + workerStatus.processed_count;
+    } else {
+      pill.className = 'worker-pill paused';
+      navText.textContent = 'Auto-Worker: PAUSED';
+      badge.className = 'badge badge-yellow';
+      badge.textContent = 'Paused';
+      headline.textContent = 'Auto-Worker is currently paused';
+      subtext.textContent = 'Toggle ON to resume automatic queue processing, or click Run Next Job manually.';
+    }
+  }
+
+  async function toggleAutoWorker() {
+    try {
+      var r = await fetch('/worker/toggle', { method: 'POST' });
+      workerStatus = await r.json();
+      updateWorkerUI();
+      toast(workerStatus.enabled ? 'Auto-Worker activated' : 'Auto-Worker paused', workerStatus.enabled ? 'success' : 'info');
+    } catch(e) {
+      toast('Failed to toggle worker', 'error');
+    }
+  }
+
+  async function loadJobs() {
+    try {
+      var r = await fetch('/jobs?limit=100');
+      if (!r.ok) return;
+      allJobs = await r.json();
+      renderStats(allJobs);
+      renderJobs(allJobs, currentFilter);
+      
+      // If modal is currently open, refresh its data live
+      if (activeModalJobId) {
+        var currentJob = allJobs.find(function(j){ return j.job_id === activeModalJobId; });
+        if (currentJob) {
+          renderModalContent(currentJob);
+        }
+      }
+    } catch (e) {}
+  }
+
+  function renderStats(jobs) {
+    var counts = { total: jobs.length, queued: 0, completed: 0, failed: 0 };
+    jobs.forEach(function (j) {
+      if (counts[j.status] !== undefined) counts[j.status]++;
+    });
+    document.getElementById('stat-total').textContent = counts.total;
+    document.getElementById('stat-queued').textContent = counts.queued;
+    document.getElementById('stat-completed').textContent = counts.completed;
+    document.getElementById('stat-failed').textContent = counts.failed;
+  }
+
+  function renderJobs(jobs, filter) {
+    var filtered = filter === 'all' ? jobs : jobs.filter(function(j){ return j.status === filter; });
+    var list = document.getElementById('jobs-list');
+
+    if (!filtered.length) {
+      list.innerHTML = '<div class="empty-state"><span class="emoji">&#128237;</span>No ' + (filter==='all'?'':filter+' ') + 'jobs found</div>';
+      return;
+    }
+
+    list.innerHTML = filtered.map(function (job) {
+      var shortId = (job.job_id || '').slice(0, 8);
+      var payloadShort = job.payload.repo_url || job.payload.title || job.payload.issue_text || 'Analysis task';
+      var time = formatTime(job.created_at);
+      var badge = statusBadge(job.status);
+      var pulsing = job.status === 'running' ? ' pulsing' : '';
+
+      // Stage pill
+      var stagePillHtml = '';
+      if (job.progress) {
+        var curr = job.progress.current_step || '';
+        if (job.status === 'running') {
+          var stageName = curr.replace('_', ' ');
+          stagePillHtml = '<span class="job-stage-pill active"><span class="spinner" style="width:10px;height:10px;margin-right:4px"></span>Stage: ' + escHtml(stageName) + '</span>';
+        } else if (job.status === 'completed') {
+          stagePillHtml = '<span class="job-stage-pill">&#10003; 6/6 Stages Verified</span>';
+        }
+      }
+
+      return '<div class="job-row" onclick="showJobDetail(\'' + escAttr(job.job_id) + '\')">' +
+        '<span class="job-id">' + escHtml(shortId) + '&hellip;</span>' +
+        '<div class="job-meta">' +
+          '<div class="job-payload">' + escHtml(payloadShort) + '</div>' +
+          '<div class="job-time">' + escHtml(time) + '</div>' +
+        '</div>' +
+        stagePillHtml +
+        '<span class="badge ' + badge.cls + pulsing + '">' + badge.label + '</span>' +
+        '<span class="job-attempts">' + job.attempts + '/' + job.max_retries + ' att</span>' +
+        '</div>';
+    }).join('');
+  }
+
+  function statusBadge(status) {
+    var map = {
+      queued:    { cls: 'badge-yellow', label: 'Queued' },
+      running:   { cls: 'badge-blue',   label: '&#9881; Running' },
+      completed: { cls: 'badge-green',  label: '&#10003; Done' },
+      failed:    { cls: 'badge-red',    label: '&#10007; Failed' },
+      human_review: { cls: 'badge-purple', label: 'Review Req.' }
+    };
+    return map[status] || { cls: 'badge-purple', label: status };
+  }
+
+  function setFilter(f) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-tab').forEach(function(t){
+      t.classList.toggle('active', t.dataset.filter === f);
+    });
+    renderJobs(allJobs, f);
+  }
+
+  async function analyzeRepo() {
+    var url = document.getElementById('repo-url').value.trim();
+    if (!url) { toast('Enter a repository URL first.', 'error'); return; }
+    try {
+      var parsed = new URL(url);
+      var pathParts = parsed.pathname.split('/').filter(Boolean);
+      if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || pathParts.length < 1 || url.length > 2048) {
+        throw new Error('invalid repository URL');
+      }
+    } catch (e) {
+      toast('Enter a valid repository URL, for example https://github.com/owner/repository.', 'error');
+      return;
+    }
+    var btn = document.getElementById('analyze-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Queuing&hellip;';
+    try {
+      var requestBody = {
+        repo_url: url,
+        issue_title: document.getElementById('issue-title').value.trim(),
+        issue_text: document.getElementById('issue-text').value.trim(),
+        issue_number: parseInt(document.getElementById('issue-number').value, 10) || 0,
+        open_pr: document.getElementById('open-pr').checked
+      };
+      var r = await fetch('/repos/analyze', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody) });
+      var data = await r.json();
+      if (r.ok) {
+        toast('Job queued! Auto-worker will begin processing: ' + (data.job_id||'').slice(0,8), 'success');
+        document.getElementById('repo-url').value = '';
+        document.getElementById('issue-title').value = '';
+        document.getElementById('issue-text').value = '';
+        document.getElementById('issue-number').value = '';
+        document.getElementById('open-pr').checked = false;
+        await loadJobs();
+        showJobDetail(data.job_id);
+      } else { toast('Error: ' + (data.detail || 'Unknown error'), 'error'); }
+    } catch(e) { toast('Network error. Is API running?', 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Analyze Repository'; }
+  }
+
+  function seedSampleRepo() {
+    document.getElementById('repo-url').value = 'https://github.com/pallets/flask';
+  }
+
+  async function runNextJob() {
+    var btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Processing&hellip;';
+    try {
+      var r = await fetch('/jobs/run-next', { method: 'POST' });
+      var data = await r.json();
+      if (data.status === 'processed') {
+        toast('Next queued job triggered successfully.', 'success');
+        await loadJobs();
+      } else if (data.status === 'busy') {
+        toast('Worker is currently processing a job.', 'info');
+      } else {
+        toast('No queued jobs found in queue.', 'info');
+      }
+    } catch(e) { toast('Network error.', 'error'); }
+    finally { btn.disabled = false; btn.textContent = '&#9654; Run Next Job'; }
+  }
+
+  async function lookupJob() {
+    var id = document.getElementById('job-lookup-id').value.trim();
+    if (!id) { toast('Enter a job UUID.', 'error'); return; }
+    try {
+      var r = await fetch('/jobs/' + encodeURIComponent(id));
+      if (!r.ok) { toast('Job not found.', 'error'); return; }
+      var job = await r.json();
+      openJobModal(job);
+    } catch(e) { toast('Network error.', 'error'); }
+  }
+
+  function showJobDetail(jobId) {
+    var job = allJobs.find(function(j){ return j.job_id === jobId; });
+    if (job) {
+      openJobModal(job);
+    } else {
+      // Fetch directly
+      fetch('/jobs/' + encodeURIComponent(jobId))
+        .then(function(r){ return r.json(); })
+        .then(function(j){ openJobModal(j); })
+        .catch(function(){ toast('Failed to load job', 'error'); });
+    }
+  }
+
+  function openJobModal(job) {
+    activeModalJobId = job.job_id;
+    renderModalContent(job);
+    document.getElementById('modal-overlay').classList.add('open');
+
+    // If job is queued or running, start fast 1.5s live polling
+    if (modalPollTimer) clearInterval(modalPollTimer);
+    if (job.status === 'running' || job.status === 'queued') {
+      modalPollTimer = setInterval(async function() {
+        if (!activeModalJobId) { clearInterval(modalPollTimer); return; }
+        try {
+          var r = await fetch('/jobs/' + encodeURIComponent(activeModalJobId));
+          if (r.ok) {
+            var updated = await r.json();
+            renderModalContent(updated);
+            if (updated.status !== 'running' && updated.status !== 'queued') {
+              clearInterval(modalPollTimer);
+              loadJobs();
+            }
+          }
+        } catch(e) {}
+      }, 1500);
+    }
+  }
+
+  function renderModalContent(job) {
+    var badge = statusBadge(job.status);
+    document.getElementById('modal-title').innerHTML =
+      'Job <code style="font-size:0.85rem;font-family:var(--mono);color:var(--accent)">' + escHtml((job.job_id||'').slice(0,12)) + '&hellip;</code> ' +
+      '<span class="badge ' + badge.cls + '">' + badge.label + '</span>';
+
+    // 1. Build Stepper Track HTML
+    var stepperHtml = buildStepperHtml(job);
+
+    // 2. Build Pull Request Banner if available
+    var prBannerHtml = '';
+    var prResult = (job.result && job.result.pr_result) ? job.result.pr_result : null;
+    if (prResult && prResult.url) {
+      prBannerHtml = 
+        '<div class="pr-banner">' +
+          '<div class="pr-title"><span>&#127881;</span> Pull Request #' + escHtml(prResult.number||'1') + ' Created Successfully!</div>' +
+          '<a class="pr-link-btn" href="' + escAttr(prResult.url) + '" target="_blank" rel="noopener">View on GitHub &rarr;</a>' +
+        '</div>';
+    }
+
+    // 3. Build Patch Diff Box if patch exists
+    var diffHtml = '';
+    var patch = (job.result && job.result.fix_cycle && job.result.fix_cycle.patch) ? job.result.fix_cycle.patch : '';
+    if (patch && patch.trim()) {
+      diffHtml = 
+        '<div style="margin:1rem 0">' +
+          '<div class="detail-label">&#9889; Unified Diff Patch Generated</div>' +
+          formatDiff(patch) +
+        '</div>';
+    }
+
+    // 4. Build Real-time Terminal Log Console
+    var terminalHtml = '';
+    var logs = (job.progress && job.progress.logs) ? job.progress.logs : [];
+    if (logs.length > 0) {
+      terminalHtml = 
+        '<div style="margin:1rem 0">' +
+          '<div class="detail-label">&#128421; Live Execution Log</div>' +
+          '<div class="terminal-console" id="modal-terminal">' +
+            logs.map(function(l){
+              var isErr = l.includes('[FAILED]') || l.includes('error') || l.includes('Error');
+              var isDone = l.includes('[COMPLETED]') || l.includes('[FINISH]');
+              var tagCls = isErr ? 'err' : (isDone ? 'done' : '');
+              return '<div class="log-line"><span class="tag ' + tagCls + '">&gt;</span>' + escHtml(l) + '</div>';
+            }).join('') +
+          '</div>' +
+        '</div>';
+    }
+
+    document.getElementById('modal-body').innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;font-size:0.8rem">' +
+        '<div><span class="detail-label">Created:</span> ' + escHtml(formatTimeFull(job.created_at)) + '</div>' +
+        '<div><span class="detail-label">Updated:</span> ' + escHtml(formatTimeFull(job.updated_at)) + '</div>' +
+      '</div>' +
+      prBannerHtml +
+      stepperHtml +
+      diffHtml +
+      terminalHtml +
+      '<div style="margin-top:1.25rem">' +
+        '<div class="detail-label">Payload</div>' +
+        '<pre>' + escHtml(JSON.stringify(job.payload, null, 2)) + '</pre>' +
+      '</div>' +
+      (job.error ? 
+        '<div style="margin-top:1rem"><div class="detail-label" style="color:var(--red)">Execution Error</div>' +
+        '<pre style="border-color:rgba(252,129,129,0.3);color:var(--red)">' + escHtml(job.error) + '</pre></div>' : '');
+
+    // Auto-scroll terminal to bottom
+    var term = document.getElementById('modal-terminal');
+    if (term) term.scrollTop = term.scrollHeight;
+  }
+
+  function buildStepperHtml(job) {
+    var progress = job.progress || {};
+    var currentStep = progress.current_step || 'queued';
+    var stepsMap = progress.steps || {};
+
+    var itemsHtml = STAGES_CONFIG.map(function(cfg, idx) {
+      var stepData = stepsMap[cfg.key] || {};
+      var status = stepData.status || 'pending';
+      var detail = stepData.detail || cfg.desc;
+
+      // Fallback inference for completed jobs
+      if (job.status === 'completed' && (!stepData.status || stepData.status === 'pending')) {
+        status = 'completed';
+      }
+
+      var iconDisplay = cfg.icon;
+      if (status === 'completed') iconDisplay = '&#10003;';
+      else if (status === 'failed') iconDisplay = '&#10007;';
+      else if (status === 'running') iconDisplay = '<span class="spinner" style="width:16px;height:16px;border-width:2px"></span>';
+
+      return '<div class="step-item ' + status + '">' +
+        '<div class="step-node">' + iconDisplay + '</div>' +
+        '<div class="step-label">' + escHtml(cfg.label) + '</div>' +
+        '<span class="step-status-pill ' + status + '">' + escHtml(status) + '</span>' +
+        '<div class="step-detail" title="' + escAttr(detail) + '">' + escHtml(detail) + '</div>' +
+      '</div>';
+    }).join('');
+
+    return '<div class="stepper-container">' +
+      '<div class="stepper-header">' +
+        '<span>Autonomous 6-Stage Pipeline</span>' +
+        '<span style="font-family:var(--mono);color:var(--accent)">' + (job.status==='running' ? '&#9881; Processing in Sandbox' : (job.status==='completed' ? '&#10003; Complete' : '')) + '</span>' +
+      '</div>' +
+      '<div class="stepper-track">' + itemsHtml + '</div>' +
+    '</div>';
+  }
+
+  function formatDiff(patch) {
+    var lines = patch.split('\n');
+    var html = '<div class="diff-box">';
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var cls = '';
+      if (line.startsWith('+') && !line.startsWith('+++')) cls = 'add';
+      else if (line.startsWith('-') && !line.startsWith('---')) cls = 'del';
+      else if (line.startsWith('@@') || line.startsWith('diff --git')) cls = 'hdr';
+      html += '<div class="diff-line ' + cls + '">' + escHtml(line || ' ') + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function closeModal(e) { if (e.target===document.getElementById('modal-overlay')) closeModalDirect(); }
+  function closeModalDirect() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    activeModalJobId = null;
+    if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
+  }
+
+  function toast(msg, type) {
+    type = type || 'info';
+    var icons = { success: '&#9989;', error: '&#10060;', info: '&#9889;' };
+    var el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = '<span>' + (icons[type]||'&#128172;') + '</span><span>' + escHtml(msg) + '</span>';
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(function(){ el.remove(); }, 4000);
+  }
+
+  document.getElementById('auto-refresh-toggle').addEventListener('click', function(){
+    autoRefresh = !autoRefresh;
+    this.classList.toggle('on', autoRefresh);
+  });
+
+  document.getElementById('repo-url').addEventListener('keydown', function(e){ if(e.key==='Enter') analyzeRepo(); });
+  document.getElementById('job-lookup-id').addEventListener('keydown', function(e){ if(e.key==='Enter') lookupJob(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeModalDirect(); });
+
+  function formatTime(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso); var now = new Date();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return d.toLocaleDateString();
+  }
+  function formatTimeFull(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function escAttr(s) { return String(s).replace(/'/g,'&#39;'); }
+
+  // Initial boots
+  checkHealth();
+  checkWorkerStatus();
+  loadJobs().then(function(){
+    var requestedJobId = new URLSearchParams(window.location.search).get('job');
+    if (requestedJobId) showJobDetail(requestedJobId);
+  });
+
+  refreshTimer = setInterval(function(){
+    if (autoRefresh) {
+      checkHealth();
+      checkWorkerStatus();
+      loadJobs();
+    }
+  }, 4000);
+</script>
+</body>
+</html>
